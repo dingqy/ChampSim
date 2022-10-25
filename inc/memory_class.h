@@ -11,7 +11,14 @@
 #define PREFETCH 2
 #define WRITEBACK 3
 #define TRANSLATION 4
-#define NUM_TYPES 5
+#define WRITETHROUGH 5
+#define INVALIDATE 6
+#define NUM_TYPES 7
+
+// CACHE TYPE
+#define INCLUSIVE 0
+#define EXCLUSIVE 1
+#define NINE 2
 
 // CACHE BLOCK
 class BLOCK
@@ -42,6 +49,7 @@ public:
   virtual int add_rq(PACKET* packet) = 0;
   virtual int add_wq(PACKET* packet) = 0;
   virtual int add_pq(PACKET* packet) = 0;
+  virtual int add_ivq(PACKET* packet) = 0;
   virtual uint32_t get_occupancy(uint8_t queue_type, uint64_t address) = 0;
   virtual uint32_t get_size(uint8_t queue_type, uint64_t address) = 0;
 
@@ -52,11 +60,16 @@ class MemoryRequestProducer
 {
 public:
   MemoryRequestConsumer* lower_level;
+  MemoryRequestConsumer* upper_level[2];
   virtual void return_data(PACKET* packet) = 0;
 
 protected:
   MemoryRequestProducer() {}
-  explicit MemoryRequestProducer(MemoryRequestConsumer* ll) : lower_level(ll) {}
+  explicit MemoryRequestProducer(MemoryRequestConsumer* ll, MemoryRequestConsumer* ul_0, MemoryRequestConsumer* ul_1) : lower_level(ll)
+  {
+    upper_level[0] = ul_0;
+    upper_level[1] = ul_1;
+  }
 };
 
 #endif
