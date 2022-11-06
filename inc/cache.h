@@ -54,10 +54,10 @@ public:
 
   uint64_t total_miss_latency = 0;
 
-  uint32_t invalidtion_this_cycle = 0;
-
-  bool invalid_retry[2] = {false, false};
-  bool send_invalid_retry[2] = {false, false};
+  bool send_inv_init_valid[2] = {true, true};
+  bool send_inv_up_valid[2] = {true, true};
+  bool write_back_valid = true;
+  bool write_through_valid = true;
 
   // functions
   int add_rq(PACKET* packet) override;

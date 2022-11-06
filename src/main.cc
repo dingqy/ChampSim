@@ -94,6 +94,14 @@ void print_roi_stats(uint32_t cpu, CACHE* cache)
     cout << "  USEFUL: " << setw(10) << cache->pf_useful << "  USELESS: " << setw(10) << cache->pf_useless << endl;
 
     cout << cache->NAME;
+    cout << " WRITETHROUGH ACCESS: " << setw(10) << cache->roi_access[cpu][4] << "  HIT: " << setw(10) << cache->roi_hit[cpu][4] << "  MISS: " << setw(10)
+         << cache->roi_miss[cpu][5] << endl;
+
+    cout << cache->NAME;
+    cout << " INVALIDATE ACCESS: " << setw(10) << cache->roi_access[cpu][5] << "  HIT: " << setw(10) << cache->roi_hit[cpu][5] << "  MISS: " << setw(10)
+         << cache->roi_miss[cpu][6] << endl;
+
+    cout << cache->NAME;
     cout << " AVERAGE MISS LATENCY: " << (1.0 * (cache->total_miss_latency)) / TOTAL_MISS << " cycles" << endl;
     // cout << " AVERAGE MISS LATENCY: " <<
     // (cache->total_miss_latency)/TOTAL_MISS << " cycles " <<
@@ -130,6 +138,14 @@ void print_sim_stats(uint32_t cpu, CACHE* cache)
     cout << cache->NAME;
     cout << " WRITEBACK ACCESS: " << setw(10) << cache->sim_access[cpu][3] << "  HIT: " << setw(10) << cache->sim_hit[cpu][3] << "  MISS: " << setw(10)
          << cache->sim_miss[cpu][3] << endl;
+
+    cout << cache->NAME;
+    cout << " WRITETHROUGH ACCESS: " << setw(10) << cache->sim_access[cpu][4] << "  HIT: " << setw(10) << cache->sim_hit[cpu][4] << "  MISS: " << setw(10)
+         << cache->sim_miss[cpu][5] << endl;
+
+    cout << cache->NAME;
+    cout << " INVALIDATE ACCESS: " << setw(10) << cache->sim_access[cpu][5] << "  HIT: " << setw(10) << cache->sim_hit[cpu][5] << "  MISS: " << setw(10)
+         << cache->sim_miss[cpu][6] << endl;
   }
 }
 

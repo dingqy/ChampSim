@@ -245,3 +245,5 @@ uint32_t MEMORY_CONTROLLER::get_size(uint8_t queue_type, uint64_t address)
 
   return 0;
 }
+
+int MEMORY_CONTROLLER::add_ivq(PACKET* packet) { return 0; }

@@ -62,6 +62,9 @@ public:
   MemoryRequestConsumer* lower_level;
   MemoryRequestConsumer* upper_level[2];
   virtual void return_data(PACKET* packet) = 0;
+  void setUpperLevel(int index, MemoryRequestConsumer* ul) {
+    upper_level[index] = ul;
+  }
 
 protected:
   MemoryRequestProducer() {}

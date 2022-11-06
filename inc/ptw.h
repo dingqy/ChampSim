@@ -69,6 +69,7 @@ public:
   uint64_t get_shamt(uint8_t pt_level);
 
   void print_deadlock() override;
+  int add_ivq(PACKET* packet) override;
 };
 
 #endif
