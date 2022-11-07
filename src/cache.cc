@@ -30,34 +30,36 @@ void CACHE::handle_fill()
     if (fill_mshr == std::end(MSHR) || fill_mshr->event_cycle > current_cycle)
       return;
 
-    // find victim
-    uint32_t set = get_set(fill_mshr->address);
+    if (cache_type != EXCLUSIVE) {
+      // find victim
+      uint32_t set = get_set(fill_mshr->address);
 
-    auto set_begin = std::next(std::begin(block), set * NUM_WAY);
-    auto set_end = std::next(set_begin, NUM_WAY);
+      auto set_begin = std::next(std::begin(block), set * NUM_WAY);
+      auto set_end = std::next(set_begin, NUM_WAY);
 
-    // Find the invalid block (If there is no invalid block, it will be the last value)
-    auto first_inv = std::find_if_not(set_begin, set_end, is_valid<BLOCK>());
-    uint32_t way = std::distance(set_begin, first_inv);
+      // Find the invalid block (If there is no invalid block, it will be the last value)
+      auto first_inv = std::find_if_not(set_begin, set_end, is_valid<BLOCK>());
+      uint32_t way = std::distance(set_begin, first_inv);
 
-    // If the distance is the number of way then no invalid block in the set
-    if (way == NUM_WAY)
-      // impl_replacement_find_victim is user-defined function
-      way = impl_replacement_find_victim(fill_mshr->cpu, fill_mshr->instr_id, set, &block.data()[set * NUM_WAY], fill_mshr->ip, fill_mshr->address,
-                                         fill_mshr->type);
+      // If the distance is the number of way then no invalid block in the set
+      if (way == NUM_WAY)
+        // impl_replacement_find_victim is user-defined function
+        way = impl_replacement_find_victim(fill_mshr->cpu, fill_mshr->instr_id, set, &block.data()[set * NUM_WAY], fill_mshr->ip, fill_mshr->address,
+                                           fill_mshr->type);
 
-    // Try to fetch the value and kick out the victim
-    bool success = filllike_miss(set, way, *fill_mshr);
-    if (!success)
-      return;
+      // Try to fetch the value and kick out the victim
+      bool success = filllike_miss(set, way, *fill_mshr);
+      if (!success)
+        return;
 
-    if (way != NUM_WAY) {
-      // update processed packets
-      fill_mshr->data = block[set * NUM_WAY + way].data;
+      if (way != NUM_WAY) {
+        // update processed packets
+        fill_mshr->data = block[set * NUM_WAY + way].data;
 
-      // Return the data to the related memory request producer
-      for (auto ret : fill_mshr->to_return)
-        ret->return_data(&(*fill_mshr));
+        // Return the data to the related memory request producer
+        for (auto ret : fill_mshr->to_return)
+          ret->return_data(&(*fill_mshr));
+      }
     }
 
     MSHR.erase(fill_mshr);
@@ -78,6 +80,7 @@ void CACHE::handle_writeback()
       if (result == -2) {
         return;
       }
+      sim_miss[handle_pkt.cpu][handle_pkt.type]++;
       sim_access[handle_pkt.cpu][handle_pkt.type]++;
     } else {
 
@@ -89,6 +92,7 @@ void CACHE::handle_writeback()
 
       if (way < NUM_WAY) // HIT
       {
+        assert(handle_pkt.type != WRITEBACK_EXCLUSIVE);
         impl_replacement_update_state(handle_pkt.cpu, set, way, fill_block.address, handle_pkt.ip, 0, handle_pkt.type, 1);
 
         // COLLECT STATS
@@ -210,6 +214,10 @@ void CACHE::readlike_hit(std::size_t set, std::size_t way, PACKET& handle_pkt)
     handle_pkt.pf_metadata = impl_prefetcher_cache_operate(pf_base_addr, handle_pkt.ip, 1, handle_pkt.type, handle_pkt.pf_metadata);
   }
 
+  if (cache_type == EXCLUSIVE) {
+    invalidate_entry(handle_pkt.address);
+  }
+
   // update replacement policy
   impl_replacement_update_state(handle_pkt.cpu, set, way, hit_block.address, handle_pkt.ip, 0, handle_pkt.type, 1);
 
@@ -324,6 +332,7 @@ bool CACHE::filllike_miss(std::size_t set, std::size_t way, PACKET& handle_pkt)
   assert(!bypass);
 #endif
   assert(handle_pkt.type != WRITEBACK || !bypass);
+  assert(handle_pkt.type != INVALIDATE);
 
   // Destination block
   BLOCK& fill_block = block[set * NUM_WAY + way];
@@ -333,7 +342,7 @@ bool CACHE::filllike_miss(std::size_t set, std::size_t way, PACKET& handle_pkt)
   uint64_t evicting_address = 0;
 
   if (!bypass) {
-    if (evicting_dirty && write_back_valid) {
+    if (cache_type != NOT_CACHE && lower_level != NULL && write_back_valid) {
       // Write Back Policy
       PACKET writeback_packet;
 
@@ -343,7 +352,7 @@ bool CACHE::filllike_miss(std::size_t set, std::size_t way, PACKET& handle_pkt)
       writeback_packet.data = fill_block.data;
       writeback_packet.instr_id = handle_pkt.instr_id;
       writeback_packet.ip = 0;
-      writeback_packet.type = WRITEBACK;
+      writeback_packet.type = evicting_dirty ? WRITEBACK : WRITEBACK_EXCLUSIVE;
 
       // Add write back request into write queue of next level
       // If it is -2, the queue is full. Then the request should be delayed.
@@ -352,6 +361,26 @@ bool CACHE::filllike_miss(std::size_t set, std::size_t way, PACKET& handle_pkt)
         return false;
       }
       write_back_valid = false;
+    } else if (cache_type == NOT_CACHE) {
+      if (evicting_dirty && write_back_valid) {
+        PACKET writeback_packet;
+
+        writeback_packet.fill_level = lower_level->fill_level;
+        writeback_packet.cpu = handle_pkt.cpu;
+        writeback_packet.address = fill_block.address;
+        writeback_packet.data = fill_block.data;
+        writeback_packet.instr_id = handle_pkt.instr_id;
+        writeback_packet.ip = 0;
+        writeback_packet.type = WRITEBACK;
+
+        // Add write back request into write queue of next level
+        // If it is -2, the queue is full. Then the request should be delayed.
+        auto result = lower_level->add_wq(&writeback_packet);
+        if (result == -2) {
+          return false;
+        }
+        write_back_valid = false;
+      }
     }
 
     // TODO: Invalidate request sent here
@@ -559,6 +588,10 @@ int CACHE::add_rq(PACKET* packet)
 
 int CACHE::add_wq(PACKET* packet)
 {
+  if (cache_type != EXCLUSIVE && packet->type == WRITEBACK_EXCLUSIVE) {
+    return 0;
+  }
+
   WQ_ACCESS++;
 
   DP(if (warmup_complete[packet->cpu]) {
@@ -822,6 +855,15 @@ void CACHE::handle_invalid()
     // handle the oldest entry
     PACKET& handle_pkt = IVQ.front();
 
+    assert(handle_pkt.type == INVALIDATE);
+
+    if (warmup_complete[handle_pkt.cpu]) {
+      std::cout << "[" << NAME << "_HANDLE_INV] " << __func__ << " instr_id: " << handle_pkt.instr_id << " address: " << std::hex
+                << (handle_pkt.address >> OFFSET_BITS);
+      std::cout << " full_addr: " << handle_pkt.address << " v_address: " << handle_pkt.v_address << std::dec << " type: " << +handle_pkt.type
+                << " occupancy: " << IVQ.occupancy();
+    }
+
     uint32_t set = get_set(handle_pkt.address);
     uint32_t way = get_way(handle_pkt.address, set);
 
@@ -841,21 +883,22 @@ void CACHE::handle_invalid()
         write_through_packet.type = WRITETHROUGH;
         write_th = true;
       }
-      invalid_up |= (cache_type == INCLUSIVE);
-      sim_hit[handle_pkt.cpu][handle_pkt.type]++;
+      invalid_up = true;
     } else {
       invalid_up |= (cache_type != INCLUSIVE);
-      sim_miss[handle_pkt.cpu][handle_pkt.type]++;
     }
 
     if (invalid_up) {
       for (int i = 0; i < 2; i++) {
-        if (send_inv_up_valid[i]) {
+        if (upper_level[i] != nullptr && send_inv_up_valid[i]) {
           auto result = upper_level[i]->add_ivq(&handle_pkt);
           if (result == -2) {
             return;
           }
           send_inv_up_valid[i] = false;
+          if (warmup_complete[handle_pkt.cpu]) {
+            std::cout << " Inv_req-submitted-" << i;
+          }
         }
       }
     }
@@ -866,6 +909,9 @@ void CACHE::handle_invalid()
         return;
       }
       write_through_valid = false;
+      if (warmup_complete[handle_pkt.cpu]) {
+        std::cout << " Wt_req-submitted";
+      }
     }
 
     invalidate_entry(handle_pkt.address);
@@ -874,12 +920,29 @@ void CACHE::handle_invalid()
     IVQ.pop_front();
     invalid_available_this_cycle--;
 
+    write_through_valid = true;
+    send_inv_up_valid[0] = true;
+    send_inv_up_valid[1] = true;
+
+    if (warmup_complete[handle_pkt.cpu]) {
+      std::cout << " Inv_req-complete";
+    }
+
+    if (way < NUM_WAY) {
+      sim_hit[handle_pkt.cpu][handle_pkt.type]++;
+    } else {
+      sim_miss[handle_pkt.cpu][handle_pkt.type]++;
+    }
     sim_access[handle_pkt.cpu][handle_pkt.type]++;
+    if (warmup_complete[handle_pkt.cpu]) {
+      std::cout << " Access: " << sim_access[handle_pkt.cpu][INVALIDATE] << std::endl;
+    }
   }
 }
 int CACHE::add_ivq(PACKET* packet)
 {
-  assert(packet->address != 0);
+  // assert(packet->address != 0);
+  assert(packet->type == INVALIDATE);
   IVQ_ACCESS++;
 
   DP(if (warmup_complete[packet->cpu]) {
@@ -899,7 +962,8 @@ int CACHE::add_ivq(PACKET* packet)
 
   auto found = std::find_if(IVQ.begin(), IVQ.end(), eq_addr<PACKET>(packet->address, OFFSET_BITS));
   if (found != IVQ.end()) {
-    DP(if (warmup_complete[packet->cpu]) std::cout << " MERGED_IVQ" << std::endl;)
+    if (warmup_complete[packet->cpu])
+      std::cout << " MERGED_IVQ" << std::endl;
 
     IVQ_MERGED++;
     return 0;

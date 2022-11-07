@@ -13,12 +13,14 @@
 #define TRANSLATION 4
 #define WRITETHROUGH 5
 #define INVALIDATE 6
-#define NUM_TYPES 7
+#define WRITEBACK_EXCLUSIVE 7
+#define NUM_TYPES 8
 
 // CACHE TYPE
 #define INCLUSIVE 0
 #define EXCLUSIVE 1
 #define NINE 2
+#define NOT_CACHE 3
 
 // CACHE BLOCK
 class BLOCK
