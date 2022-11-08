@@ -54,10 +54,11 @@ public:
 
   uint64_t total_miss_latency = 0;
 
-  bool send_inv_init_valid[2] = {true, true};
-  bool send_inv_up_valid[2] = {true, true};
-  bool write_back_valid = true;
-  bool write_through_valid = true;
+  bool send_inv_valid[2] = {true, true};
+  bool block_fill[2] = {false, false};
+  bool invalidate_ready[2] = {false, false};
+  uint32_t lock_set[2] = {NUM_SET, NUM_SET};
+  uint64_t write_address_ongoing[2] = {0, 0};
 
   // functions
   int add_rq(PACKET* packet) override;
@@ -92,7 +93,7 @@ public:
 
   void readlike_hit(std::size_t set, std::size_t way, PACKET& handle_pkt);
   bool readlike_miss(PACKET& handle_pkt);
-  bool filllike_miss(std::size_t set, std::size_t way, PACKET& handle_pkt);
+  bool filllike_miss(std::size_t set, std::size_t way, PACKET& handle_pkt, bool type);
 
   bool should_activate_prefetcher(int type);
 
