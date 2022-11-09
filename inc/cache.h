@@ -55,10 +55,7 @@ public:
   uint64_t total_miss_latency = 0;
 
   bool send_inv_valid[2] = {true, true};
-  bool block_fill[2] = {false, false};
-  bool invalidate_ready[2] = {false, false};
-  uint32_t lock_set[2] = {NUM_SET, NUM_SET};
-  uint64_t write_address_ongoing[2] = {0, 0};
+  bool send_wb_valid = true;
 
   // functions
   int add_rq(PACKET* packet) override;
@@ -71,6 +68,7 @@ public:
   void operate_writes();
   void operate_reads();
   void operate_invalid();
+  static void copy_packet(PACKET* old_packet, PACKET* new_packet);
 
   uint32_t get_occupancy(uint8_t queue_type, uint64_t address) override;
   uint32_t get_size(uint8_t queue_type, uint64_t address) override;
@@ -93,7 +91,7 @@ public:
 
   void readlike_hit(std::size_t set, std::size_t way, PACKET& handle_pkt);
   bool readlike_miss(PACKET& handle_pkt);
-  bool filllike_miss(std::size_t set, std::size_t way, PACKET& handle_pkt, bool type);
+  bool filllike_miss(std::size_t set, std::size_t way, PACKET& handle_pkt);
 
   bool should_activate_prefetcher(int type);
 

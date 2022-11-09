@@ -116,6 +116,10 @@ void MEMORY_CONTROLLER::operate()
 
 int MEMORY_CONTROLLER::add_rq(PACKET* packet)
 {
+  if (packet->test_packet) {
+    return 0;
+  }
+
   if (all_warmup_complete < NUM_CPUS) {
     for (auto ret : packet->to_return)
       ret->return_data(packet);
@@ -160,6 +164,10 @@ int MEMORY_CONTROLLER::add_rq(PACKET* packet)
 
 int MEMORY_CONTROLLER::add_wq(PACKET* packet)
 {
+  if (packet->type == WRITEBACK_EXCLUSIVE) {
+    return 0;
+  }
+
   if (all_warmup_complete < NUM_CPUS)
     return -1; // Fast-forward
 
@@ -246,4 +254,11 @@ uint32_t MEMORY_CONTROLLER::get_size(uint8_t queue_type, uint64_t address)
   return 0;
 }
 
-int MEMORY_CONTROLLER::add_ivq(PACKET* packet) { return 0; }
+int MEMORY_CONTROLLER::add_ivq(PACKET* packet)
+{
+  if (packet->data_valid) {
+    packet->type = WRITEBACK;
+    return add_wq(packet);
+  }
+  return 0;
+}

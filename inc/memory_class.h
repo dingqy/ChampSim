@@ -28,6 +28,8 @@ class BLOCK
 public:
   bool valid = false, prefetch = false, dirty = false;
 
+  int inv_ongoing = 0;
+
   uint64_t address = 0, v_address = 0, tag = 0, data = 0, ip = 0, cpu = 0, instr_id = 0;
 
   // replacement state
@@ -64,9 +66,7 @@ public:
   MemoryRequestConsumer* lower_level;
   MemoryRequestConsumer* upper_level[2];
   virtual void return_data(PACKET* packet) = 0;
-  void setUpperLevel(int index, MemoryRequestConsumer* ul) {
-    upper_level[index] = ul;
-  }
+  void setUpperLevel(int index, MemoryRequestConsumer* ul) { upper_level[index] = ul; }
 
 protected:
   MemoryRequestProducer() {}
