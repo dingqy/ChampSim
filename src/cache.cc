@@ -203,9 +203,6 @@ void CACHE::handle_read()
 
     if (way < NUM_WAY && fill_block.valid) // HIT
     {
-      if (fill_block.inv_ongoing != 0) {
-        return;
-      }
       readlike_hit(set, way, handle_pkt);
     } else {
       bool success = readlike_miss(handle_pkt);
@@ -236,9 +233,6 @@ void CACHE::handle_prefetch()
 
     if (way < NUM_WAY && fill_block.valid) // HIT
     {
-      if (fill_block.inv_ongoing != 0) {
-        return;
-      }
       readlike_hit(set, way, handle_pkt);
     } else {
       bool success = readlike_miss(handle_pkt);
@@ -414,10 +408,6 @@ bool CACHE::filllike_miss(std::size_t set, std::size_t way, PACKET& handle_pkt)
   if (!bypass) {
     if (fill_block.valid) {
 
-      if (fill_block.inv_ongoing != 0) {
-        return false;
-      }
-
       if (send_wb_valid) {
         PACKET writeback_packet;
         writeback_packet.fill_level = lower_level->fill_level;
@@ -512,7 +502,6 @@ bool CACHE::filllike_miss(std::size_t set, std::size_t way, PACKET& handle_pkt)
     fill_block.ip = handle_pkt.ip;
     fill_block.cpu = handle_pkt.cpu;
     fill_block.instr_id = handle_pkt.instr_id;
-    fill_block.inv_ongoing = handle_pkt.inv_ongoing;
   }
 
   // Calculate the memory request miss latency (Fill cycle - Enqueue cycle)
@@ -624,7 +613,7 @@ int CACHE::add_rq(PACKET* packet)
   // check for the latest writebacks in the write queue
   champsim::delay_queue<PACKET>::iterator found_wq = std::find_if(WQ.begin(), WQ.end(), eq_addr<PACKET>(packet->address, match_offset_bits ? 0 : OFFSET_BITS));
 
-  if (found_wq != WQ.end()) {
+  if (found_wq != WQ.end() && found_wq->inv_ongoing == 0) {
 
     DP(if (warmup_complete[packet->cpu]) std::cout << " MERGED_WQ" << std::endl;)
 
@@ -964,16 +953,17 @@ void CACHE::handle_invalid()
     uint32_t set = get_set(handle_pkt.address);
     uint32_t way = get_way(handle_pkt.address, set);
 
-    BLOCK& fill_block = block[set * NUM_WAY + way];
-
     if (handle_pkt.fill_level > fill_level) {
-      if (way < NUM_WAY && fill_block.valid) {
-        // HIT
-        if ((!handle_pkt.data_valid) && fill_block.dirty) {
-          handle_pkt.data = fill_block.data;
-          handle_pkt.data_valid = true;
+      if (way < NUM_WAY) {
+        BLOCK& fill_block = block[set * NUM_WAY + way];
+        if (fill_block.valid) {
+          // HIT
+          if ((!handle_pkt.data_valid) && fill_block.dirty) {
+            handle_pkt.data = fill_block.data;
+            handle_pkt.data_valid = true;
+          }
+          DP(if (warmup_complete[handle_pkt.cpu]) { std::cout << " hit-inv"; })
         }
-        DP(if (warmup_complete[handle_pkt.cpu]) { std::cout << " hit-inv"; })
       }
       auto result = lower_level->add_ivq(&handle_pkt);
       if (result == -2) {
@@ -983,7 +973,7 @@ void CACHE::handle_invalid()
       } else if (result == -4) {
         DP(if (warmup_complete[handle_pkt.cpu]) { std::cout << " merge_to_ivq"; })
       }
-      if (way < NUM_WAY && fill_block.valid) {
+      if (way < NUM_WAY && block[set * NUM_WAY + way].valid) {
         sim_hit[handle_pkt.cpu][handle_pkt.type]++;
       } else {
         sim_miss[handle_pkt.cpu][handle_pkt.type]++;
@@ -991,17 +981,30 @@ void CACHE::handle_invalid()
       invalidate_entry(handle_pkt.address);
 
     } else if (handle_pkt.fill_level == fill_level) {
-      if (handle_pkt.data_valid) {
-        fill_block.data = handle_pkt.data;
-        fill_block.dirty = true;
+      if (way < NUM_WAY) {
+        BLOCK& fill_block = block[set * NUM_WAY + way];
+        if (handle_pkt.data_valid) {
+          fill_block.data = handle_pkt.data;
+          fill_block.dirty = true;
+        }
+        sim_hit[handle_pkt.cpu][handle_pkt.type]++;
+        DP(if (warmup_complete[handle_pkt.cpu]) {
+          std::cout << " finish-invalidation "
+                    << "inv_ongoing: " << fill_block.inv_ongoing << " merge_count: " << handle_pkt.merge_count;
+        })
+      } else {
+        if (handle_pkt.data_valid) {
+          handle_pkt.fill_level = lower_level->fill_level;
+          auto result = lower_level->add_ivq(&handle_pkt);
+          if (result == -2) {
+            return;
+          } else if (result == -3) {
+            DP(if (warmup_complete[handle_pkt.cpu]) { std::cout << " merge_to_wq"; })
+          } else if (result == -4) {
+            DP(if (warmup_complete[handle_pkt.cpu]) { std::cout << " merge_to_ivq"; })
+          }
+        }
       }
-      fill_block.inv_ongoing -= handle_pkt.merge_count;
-      sim_hit[handle_pkt.cpu][handle_pkt.type]++;
-      DP(if (warmup_complete[handle_pkt.cpu]) {
-        std::cout << " finish-invalidation "
-                  << "inv_ongoing: " << fill_block.inv_ongoing << " merge_count: " << handle_pkt.merge_count;
-      })
-      assert(fill_block.inv_ongoing >= 0);
     } else {
       assert(0);
     }
